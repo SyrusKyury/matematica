@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gauss Dettagliato (Normalizzazione Concettuale)</title>
+    <script>
+        MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                macros: {
+                    // Macro per evidenziare i pivot e gli zeri
+                    bbox: ["\\bbox[#a2d2ff, 2px]{#1}", 1],
+                    zbox: ["\\bbox[#bde0fe, 2px]{#1}", 1]
+                }
+            },
+            svg: { fontCache: 'global' }
+        };
+    </script>
+    <script type="text/javascript" id="MathJax-script" async
+        src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; margin: 20px; background-color: #f4f4f9; color: #333; }
+        h1, h2, h3 { color: #2c3e50; }
+        h2 { border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        #container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .controls { margin-bottom: 20px; padding: 15px; background-color: #eaf2f8; border-radius: 8px; text-align: center; }
+        .controls label { margin-right: 10px; font-weight: bold; }
+        .controls select, .controls button { padding: 8px 12px; font-size: 1em; border-radius: 5px; border: 1px solid #ccc; }
+        .controls button { background-color: #3498db; color: white; cursor: pointer; border-color: #2980b9; }
+        .controls button:hover { background-color: #2980b9; }
+        .step { border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin-top: 20px; background-color: #fafafa; overflow-x: auto; }
+        .step h3 { margin-top: 0; color: #3498db; }
+        .step h4 { margin-top: 20px; color: #e67e22; border-bottom: 1px solid #e67e22; }
+        .sub-step { margin-left: 20px; border-left: 3px solid #3498db; padding-left: 15px; margin-top: 15px; }
+        .solution { font-weight: bold; color: #27ae60; font-size: 1.2em; background-color: #e8f5e9; padding: 10px; border-radius: 5px; display: inline-block; }
+        .error { color: #c0392b; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h1>Risolutore di Sistemi Lineari (Metodo di Gauss)</h1>
+        
+        <div class="controls">
+            <label for="system-size">Numero di incognite:</label>
+            <select id="system-size">
+                <option value="2">2x2</option>
+                <option value="3" selected>3x3</option>
+                <option value="4">4x4</option>
+                <option value="5">5x5</option>
+            </select>
+            <button id="generate-btn">Genera e Risolvi</button>
+        </div>
+
+        <div id="results">
+            <h2>1. Sistema di Partenza</h2>
+            <div id="system"></div>
+            <h2>2. Procedura di Risoluzione</h2>
+            <div id="procedure"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- CLASSE FRACTION (invariata) ---
+        class Fraction {
+            constructor(n, d = 1) { if (d === 0) throw new Error("Denominatore nullo."); this.num = n; this.den = d; this.simplify(); }
+            gcd(a, b) { return b === 0 ? a : this.gcd(b, a % b); }
+            simplify() { const c = this.gcd(Math.abs(this.num), Math.abs(this.den)); this.num /= c; this.den /= c; if (this.den < 0) { this.num = -this.num; this.den = -this.den; } }
+            add(o) { return new Fraction(this.num * o.den + o.num * this.den, this.den * o.den); }
+            subtract(o) { return new Fraction(this.num * o.den - o.num * this.den, this.den * o.den); }
+            multiply(o) { return new Fraction(this.num * o.num, this.den * o.den); }
+            divide(o) { if (o.num === 0) throw new Error("Divisione per zero."); return new Fraction(this.num * o.den, this.den * o.num); }
+            toLatex() {
+                if (this.num === 0) return "0";
+                if (this.den === 1) return `${this.num}`;
+                if (this.num < 0) return `\\left(\\frac{${this.num}}{${this.den}}\\right)`;
+                return `\\frac{${this.num}}{${this.den}}`;
+            }
+        }
+
+        // --- FUNZIONI DI GENERAZIONE ---
+        function getValue() { const min = -3, max = 3; let v = 0; while (v === 0) v = Math.floor(Math.random() * (max - min + 1)) + min; return v; }
+        function generateMatrix(eqNum) { eqNum = parseInt(eqNum); let m = Array.from({ length: eqNum }, () => Array.from({ length: eqNum }, getValue)); let s = Array.from({ length: eqNum }, () => getValue()); m.forEach((r, i) => { let k = r.reduce((sum, c, j) => sum + c * s[j], 0); r.push(k); }); return [m, s]; }
+        
+        // --- FUNZIONI DI VISUALIZZAZIONE ---
+        function renderSystem(m) { let n = m.length; let l = '\\[ \\begin{cases} '; for (let i = 0; i < n; i++) { let r = m[i]; let p = []; for (let j = 0; j < n; j++) { let c = r[j]; if (c === 0) continue; let s = (c > 0) ? ' + ' : ' - '; c = Math.abs(c); if (p.length === 0 && s === ' + ') s = ''; let cs = (c !== 1) ? c : ''; p.push(`${s}${cs}x_{${j + 1}}`); } let eq = p.join(''); if (eq.startsWith(' - ')) eq = '-' + eq.slice(3); eq += ` = ${r[n]}`; l += eq + ' \\\\ '; } l += '\\end{cases} \\]'; document.getElementById('system').innerHTML = l; }
+        function rowToLatex(rowArray) { return `\\begin{bmatrix} ${rowArray.map(f => f.toLatex()).join(' & ')} \\end{bmatrix}`; }
+
+        function matrixToLatex(matrix) {
+            let latex = '\\[ \\left[ \\begin{array}{' + 'c'.repeat(matrix[0].length-1) + '|c} ';
+            for (let i = 0; i < matrix.length; i++) {
+                latex += matrix[i].map(frac => frac.toLatex()).join(' & ') + ' \\\\ ';
+            }
+            latex += '\\end{array} \\right] \\]';
+            return latex;
+        }
+
+        // --- FUNZIONE DI RISOLUZIONE PRINCIPALE ---
+        async function solve(matrix) {
+            const procedureDiv = document.getElementById('procedure');
+            procedureDiv.innerHTML = "Sto elaborando i passaggi...";
+            let stepsHtml = '';
+            const n = matrix.length;
+            let m = matrix.map(row => row.map(val => new Fraction(val)));
+            let zeroedCoords = [];
+
+            stepsHtml += `<div class="step"><h3>Passo 0: Matrice Aumentata</h3><p>Partiamo dalla matrice aumentata [A|b]:</p>${matrixToLatex(m)}</div>`;
+
+            // FASE 1: ELIMINAZIONE
+            for (let j = 0; j < n; j++) {
+                stepsHtml += `<h2>Fase ${j + 1}: Lavoriamo sulla colonna ${j + 1} per azzerare gli elementi sotto il pivot</h2>`;
+                const pivotElement = m[j][j];
+                const pivotRow = m[j];
+
+                if (pivotElement.num === 0) {
+                    stepsHtml += `<div class="step"><p class="error">ERRORE: Pivot nullo. Impossibile continuare senza scambio di righe.</p></div>`;
+                    procedureDiv.innerHTML = stepsHtml;
+                    await MathJax.typesetPromise();
+                    return;
+                }
+
+                for (let i = j + 1; i < n; i++) {
+                    const elementToZero = m[i][j];
+                    if (elementToZero.num === 0) continue;
+                    
+                    // Calcolo concettuale, non modifica la matrice
+                    const tempNormalizedRow = pivotRow.map(el => el.divide(pivotElement));
+                    const rowToSubtract = tempNormalizedRow.map(el => el.multiply(elementToZero));
+                    
+                    const originalRowI = [...m[i]];
+                    const newRowI = originalRowI.map((el, k) => el.subtract(rowToSubtract[k]));
+                    
+                    stepsHtml += `
+                        <div class="step">
+                            <h4>Lavoriamo sulla riga $R_{${i+1}}$ per azzerare l'elemento $A_{${i+1},${j+1}}$</h4>
+                            <p>L'obiettivo è azzerare $A_{${i+1},${j+1}} = ${elementToZero.toLatex()}$ usando la riga pivot $R_{${j+1}}$.</p>
+                            
+                            <div class="sub-step">
+                                <p><b>a) Calcolo concettuale:</b> Normalizziamo la riga pivot (dividiamo per $${pivotElement.toLatex()}$):</p>
+                                <p>$R_{pivot\\_norm} = \\frac{1}{${pivotElement.toLatex()}} \\cdot ${rowToLatex(pivotRow)} = ${rowToLatex(tempNormalizedRow)}$</p>
+                            </div>
+                            
+                            <div class="sub-step">
+                                <p><b>b) Moltiplicazione:</b> Moltiplichiamo la riga normalizzata per l'elemento da azzerare ($${elementToZero.toLatex()}$):</p>
+                                <p>$R_{sottr} = ${elementToZero.toLatex()} \\cdot R_{pivot\\_norm} = ${rowToLatex(rowToSubtract)}$</p>
+                            </div>
+                            
+                            <div class="sub-step">
+                                <p><b>c) Sottrazione:</b> Sottraiamo il risultato dalla riga $R_{${i+1}}$: $R'_{${i+1}} \\leftarrow R_{${i+1}} - R_{sottr}$</p>
+                                <p>$R'_{${i+1}} = ${rowToLatex(originalRowI)} - ${rowToLatex(rowToSubtract)} = ${rowToLatex(newRowI)}$</p>
+                            </div>
+                        </div>`;
+
+                    m[i] = newRowI; // Aggiorna la matrice principale solo ora
+                    zeroedCoords.push({ row: i, col: j });
+                }
+                 stepsHtml += `<div class="step"><h4>Matrice al termine della Fase ${j+1}</h4>${matrixToLatex(m, { zeros: zeroedCoords })}</div>`;
+            }
+
+            // FASE 2: SOSTITUZIONE ALL'INDIETRO
+            stepsHtml += `<h2>Fase Finale: Sostituzione all'Indietro</h2>`;
+            const solutions = new Array(n);
+            for (let i = n - 1; i >= 0; i--) {
+                let sum = m[i][n];
+                for (let j = i + 1; j < n; j++) {
+                    sum = sum.subtract(m[i][j].multiply(solutions[j]));
+                }
+                solutions[i] = sum.divide(m[i][i]);
+
+                stepsHtml += `<div class="step">
+                    <h3>Risolvere per $x_{${i+1}}$</h3>
+                    <p>Dalla riga ${i+1}: $${m[i][i].toLatex()}x_{${i+1}} + \\dots = ${m[i][n].toLatex()}$</p>
+                    <p>Isolando: $${m[i][i].toLatex()}x_{${i+1}} = ${m[i][n].toLatex()} ${[...Array(n).keys()].slice(i+1).map(k => `- (${m[i][k].toLatex()}) \\cdot (${solutions[k].toLatex()})`).join(' ')} $</p>
+                    <p>$${m[i][i].toLatex()}x_{${i+1}} = ${sum.toLatex()}$</p>
+                    <p>$x_{${i+1}} = \\frac{${sum.toLatex()}}{${m[i][i].toLatex()}} = ${solutions[i].toLatex()}$</p>
+                    <p class="solution">$x_{${i+1}} = ${solutions[i].toLatex()}$</p>
+                    </div>`;
+            }
+
+            stepsHtml += `<h2>Soluzione Finale</h2><p>Le soluzioni esatte del sistema sono:</p>
+                <div class="solution">
+                    ${solutions.map((s, i) => `$x_{${i+1}} = ${s.toLatex()}$`).join('<br>')}
+                </div>`;
+
+            procedureDiv.innerHTML = stepsHtml;
+            await MathJax.typesetPromise();
+        }
+        
+        // --- GESTIONE EVENTI ---
+        function startSolving() {
+            const size = document.getElementById('system-size').value;
+            document.getElementById('results').style.display = 'block';
+            
+            const [matrix, originalSolutions] = generateMatrix(size);
+            console.log(`Matrice ${size}x${size} Generata:`, matrix);
+            console.log('Soluzioni Teoriche:', originalSolutions);
+            
+            renderSystem(matrix);
+            solve(matrix);
+        }
+
+        document.getElementById('generate-btn').addEventListener('click', startSolving);
+        
+        // Risolvi un sistema 3x3 al caricamento della pagina
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('results').style.display = 'none';
+            startSolving();
+        });
+    </script>
+</body>
+</html>
