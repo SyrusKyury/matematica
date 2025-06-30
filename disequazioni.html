@@ -1,0 +1,258 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <title>Risolutore Disequazioni di Secondo Grado</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 800px; margin: 20px auto; padding: 20px; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
+        #controls { background-color: #eaf2f8; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
+        #controls-form { display: contents; }
+        #controls label { font-weight: bold; margin-right: 5px; }
+        #controls select, #controls input, #controls button { padding: 8px; font-size: 1em; border: 1px solid #ccc; border-radius: 5px; }
+        #custom-inputs-wrapper { display: flex; gap: 10px; align-items: center; }
+        #custom-inputs-wrapper input { width: 60px; }
+        .hidden { display: none !important; }
+        #generate-btn { flex-grow: 1; background-color: #3498db; color: white; cursor: pointer; border: none; }
+        #generate-btn:hover { background-color: #2980b9; }
+        #share-btn { background-color: #2ecc71; color: white; cursor: pointer; border: none; display: none; }
+        #share-btn:hover { background-color: #27ae60; }
+        h1, h2, h3 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        h3 { border-bottom-style: dashed; font-size: 1.2em; }
+        #steps p { background-color: #ecf0f1; padding: 15px; border-left: 5px solid #3498db; margin: 15px 0; border-radius: 0 5px 5px 0; }
+        #steps .warning { border-left-color: #f39c12; background-color: #fef5e7; }
+        .solution { color: #e74c3c; font-weight: bold; }
+    </style>
+    <script>
+        MathJax = { tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] }, svg: { fontCache: 'global' } };
+    </script>
+    <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+
+<body onload="init()">
+
+    <div class="container">
+        <h1>Risolutore Guidato di Disequazioni di Secondo Grado</h1>
+
+        <div id="controls">
+            <form id="controls-form" onsubmit="event.preventDefault(); handleGeneration();">
+                <label for="delta-select">Modalità:</label>
+                <select id="delta-select" onchange="toggleCustomControls()">
+                    <option value="random">Casuale</option>
+                    <option value="pos">Δ > 0</option>
+                    <option value="zero">Δ = 0</option>
+                    <option value="neg">Δ < 0</option>
+                    <option value="custom">Personalizzata</option>
+                </select>
+
+                <span id="a-sign-wrapper">
+                    <label for="a-sign-select">Segno di a:</label>
+                    <select id="a-sign-select">
+                        <option value="random">Casuale</option>
+                        <option value="pos">Positivo</option>
+                        <option value="neg">Negativo</option>
+                    </select>
+                </span>
+
+                <div id="custom-inputs-wrapper" class="hidden">
+                    <label>a:</label><input type="number" id="a-input" value="1" required>
+                    <label>b:</label><input type="number" id="b-input" value="-5" required>
+                    <label>c:</label><input type="number" id="c-input" value="6" required>
+                </div>
+                
+                <label for="op-select">Verso:</label>
+                <select id="op-select">
+                    <option value="random">Casuale</option>
+                    <option value=">">></option>
+                    <option value="<"><</option>
+                    <option value="\ge">≥</option>
+                    <option value="\le">≤</option>
+                </select>
+                
+                <button type="submit" id="generate-btn">Genera e Risolvi</button>
+            </form>
+            <button id="share-btn" onclick="shareUrl()">Condividi URL</button>
+        </div>
+        <div id="steps"></div>
+    </div>
+
+    <script>
+        const stepsContainer = document.getElementById('steps');
+        const shareButton = document.getElementById('share-btn');
+        const operatorMap = { '>': 'gt', '<': 'lt', '\\ge': 'ge', '\\le': 'le' };
+        const operatorReverseMap = { 'gt': '>', 'lt': '<', 'ge': '\\ge', 'le': '\\le' };
+
+        function init() {
+            // --- MODIFICA QUI: Resetta i controlli allo stato di default "Casuale" ---
+            document.getElementById('delta-select').value = 'random';
+            document.getElementById('a-sign-select').value = 'random';
+            document.getElementById('op-select').value = 'random';
+            toggleCustomControls(); // Assicura che la UI sia coerente con la selezione
+            
+            // Ora, controlla se un URL specifico deve sovrascrivere questo default
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('a') && urlParams.has('b') && urlParams.has('c') && urlParams.has('op')) {
+                const a = parseInt(urlParams.get('a'));
+                const b = parseInt(urlParams.get('b'));
+                const c = parseInt(urlParams.get('c'));
+                const op = operatorReverseMap[urlParams.get('op')];
+
+                if (!isNaN(a) && !isNaN(b) && !isNaN(c) && op) {
+                    // Imposta la UI per riflettere lo stato caricato dall'URL
+                    document.getElementById('delta-select').value = 'custom';
+                    toggleCustomControls();
+                    document.getElementById('a-input').value = a;
+                    document.getElementById('b-input').value = b;
+                    document.getElementById('c-input').value = c;
+                    document.getElementById('op-select').value = op;
+                    
+                    displaySolution(a, b, c, op);
+                    shareButton.style.display = 'inline-block';
+                }
+            } else {
+                // Se non ci sono parametri URL, genera una disequazione casuale come da default
+                handleGeneration();
+            }
+        }
+
+        function toggleCustomControls() {
+            const mode = document.getElementById('delta-select').value;
+            const customWrapper = document.getElementById('custom-inputs-wrapper');
+            const aSignWrapper = document.getElementById('a-sign-wrapper');
+
+            if (mode === 'custom') {
+                customWrapper.classList.remove('hidden');
+                aSignWrapper.classList.add('hidden');
+            } else {
+                customWrapper.classList.add('hidden');
+                aSignWrapper.classList.remove('hidden');
+            }
+        }
+        
+        function handleGeneration() {
+            const mode = document.getElementById('delta-select').value;
+            let a, b, c, operator;
+
+            if (mode === 'custom') {
+                a = parseInt(document.getElementById('a-input').value);
+                b = parseInt(document.getElementById('b-input').value);
+                c = parseInt(document.getElementById('c-input').value);
+                operator = document.getElementById('op-select').value;
+                if(operator === 'random') {
+                   const operators = ['>', '<', '\\ge', '\\le'];
+                   operator = operators[Math.floor(Math.random() * operators.length)];
+                }
+
+                if (isNaN(a) || isNaN(b) || isNaN(c)) {
+                    alert("Assicurati di inserire valori numerici validi per a, b e c.");
+                    return;
+                }
+                if (a === 0) {
+                    alert("Il coefficiente 'a' non può essere zero per una disequazione di secondo grado.");
+                    return;
+                }
+            } else {
+                let deltaCase = mode;
+                if (deltaCase === 'random') {
+                    const cases = ['pos', 'zero', 'neg'];
+                    deltaCase = cases[Math.floor(Math.random() * cases.length)];
+                }
+                let aSign = document.getElementById('a-sign-select').value;
+                if (aSign === 'random') aSign = Math.random() < 0.5 ? 'pos' : 'neg';
+                
+                operator = document.getElementById('op-select').value;
+                if (operator === 'random') {
+                    const operators = ['>', '<', '\\ge', '\\le'];
+                    operator = operators[Math.floor(Math.random() * operators.length)];
+                }
+                
+                const coeffs = generateCoefficients(deltaCase, aSign);
+                a = coeffs.a; b = coeffs.b; c = coeffs.c;
+            }
+            
+            updateUrl(a, b, c, operator);
+            displaySolution(a, b, c, operator);
+        }
+
+        function generateCoefficients(deltaCase, aSign) {
+            const a_base = aSign === 'neg' ? -1 : 1;
+            let a = a_base, b, c; let x1, x2;
+            switch(deltaCase) {
+                case 'pos': x1 = getValue(); x2 = getValue(); while (x1 === x2) x2 = getValue(); a = a_base; b = -a * (x1 + x2); c = a * x1 * x2; break;
+                case 'zero': x1 = getValue(); a = a_base; b = -2 * a * x1; c = a * x1 * x1; break;
+                case 'neg': a = a_base; b = getValue(); let four_ac = Math.abs(b*b) + (Math.floor(Math.random()*10)+4); c = Math.ceil(four_ac / (4 * a)); break;
+            }
+            return { a, b, c };
+        }
+        
+        function displaySolution(a_orig, b_orig, c_orig, operator_orig) {
+            stepsContainer.innerHTML = '';
+            let a = a_orig, b = b_orig, c = c_orig, operator = operator_orig;
+            let operatorHtml = operator.replace('ge','≥').replace('le','≤');
+
+            printStep(`<h2>1. Disequazione Iniziale</h2>${formatEquation(a, b, c, operator)}`);
+            
+            if (a < 0) {
+                 const originalEquation = formatEquation(a, b, c, operator);
+                 const operatorFlip = { '>': '<', '<': '>', '\\ge': '\\le', '\\le': '\\ge' };
+                 operator = operatorFlip[operator]; a = -a; b = -b; c = -c;
+                 operatorHtml = operator.replace('ge','≥').replace('le','≤');
+                 printStep(`<h2>2. Normalizzazione (a > 0)</h2>Poiché il coefficiente di $x^2$ è negativo, moltiplichiamo per -1 e <strong>invertiamo il verso</strong>.<br>Da: ${originalEquation} Si ottiene: ${formatEquation(a, b, c, operator)}`, 'warning');
+            }
+
+            const delta = b * b - 4 * a * c;
+            printStep(`<h2>${a > 0 ? '2.' : '3.'} Calcolo del discriminante (Delta)</h2>Usiamo la formula: $$\\Delta = b^2 - 4ac$$ $$ \\Delta = (${b})^2 - 4 \\cdot (${a}) \\cdot (${c}) = ${b*b} - (${4*a*c}) = ${delta} $$`);
+            
+            if (delta > 0) {
+                const sqrt_delta = Math.sqrt(delta);
+                printStep(`<h3>Analisi e Soluzione (Δ > 0)</h3>Poiché <strong>Δ > 0</strong>, ci sono due radici reali: $$x_{1,2} = \\frac{-b \\pm \\sqrt{\\Delta}}{2a} = \\frac{-(${b}) \\pm \\sqrt{${delta}}}{${2*a}} = \\frac{${-b} \\pm ${sqrt_delta}}{${2*a}}$$`);
+                const x1 = (-b - sqrt_delta) / (2 * a), x2 = (-b + sqrt_delta) / (2 * a);
+                const min_x = Math.min(x1, x2), max_x = Math.max(x1, x2);
+                printStep(`Le radici sono: $x_1 = ${min_x}$ e $x_2 = ${max_x}$.`);
+                let text = (operator === '>' || operator === '\\ge') ? "valori esterni" : "valori interni";
+                let solutionText = `Poiché $a=${a}$ è positivo e il verso è ${operatorHtml}, la soluzione è per <strong>${text}</strong>.<br><br>Soluzione: <span class="solution">`;
+                if (operator === '>') solutionText += `$$ x < ${min_x} \\cup x > ${max_x} $$</span><br>Intervalli: <span class="solution">$$ ]-\\infty, ${min_x}[ \\cup ]${max_x}, +\\infty[ $$</span>`;
+                else if (operator === '\\ge') solutionText += `$$ x \\le ${min_x} \\cup x \\ge ${max_x} $$</span><br>Intervalli: <span class="solution">$$ ]-\\infty, ${min_x}] \\cup [${max_x}, +\\infty[ $$</span>`;
+                else if (operator === '<') solutionText += `$$ ${min_x} < x < ${max_x} $$</span><br>Intervalli: <span class="solution">$$ ]${min_x}, ${max_x}[ $$</span>`;
+                else solutionText += `$$ ${min_x} \\le x \\le ${max_x} $$</span><br>Intervalli: <span class="solution">$$ [${min_x}, ${max_x}] $$</span>`;
+                printStep(solutionText);
+
+            } else if (delta === 0) {
+                const x = -b / (2 * a);
+                let solutionText = '';
+                if (operator !== '<' && operator !== '\\ge')
+                {
+                    printStep(`<h3>Analisi e Soluzione (Δ = 0)</h3>Poiché <strong>Δ = 0</strong>, c'è una sola radice reale: $$x = -\\frac{b}{2a} = -\\frac{${b}}{${2*a}} = ${x}$$`);
+                    solutionText += `Il trinomio ha il segno di $a=${a}$ (positivo) ovunque, tranne in $x=${x}$ dove vale zero.<br><br>`;
+                }
+                solutionText += `Soluzione: `;
+
+                if (operator === '>') solutionText += `<span class="solution">$$ x \\ne ${x} $$</span><br>Intervalli: <span class="solution">$$ ]-\\infty, ${x}[ \\cup ]${x}, +\\infty[ $$</span>`;
+                else if (operator === '<') solutionText += `<span class="solution">Impossibile, $$\\nexists x \\in \\mathbb{R}$$</span><br>Intervalli: <span class="solution">$$ \\emptyset $$</span>`;
+                else if (operator === '\\ge') solutionText += `<span class="solution">Sempre verificata, $$\\forall x \\in \\mathbb{R}$$</span><br>Intervalli: <span class="solution">$$ ]-\\infty, +\\infty[ $$</span>`;
+                else solutionText += `Verificata solo per <span class="solution">$$ x = ${x} $$</span><br>Intervalli: <span class="solution">$$ \\{${x}\\} $$</span>`;
+                printStep(solutionText);
+
+            } else { // delta < 0
+                printStep(`<h3>Analisi e Soluzione (Δ < 0)</h3>Poiché <strong>Δ < 0</strong>, il trinomio ha un <strong>segno costante</strong>. Sostituiamo <strong>x=0</strong>: ${formatEquation(a, b, c, operator)}`);
+                printStep(`Sostituendo $x=0$: $$ ${a}(0)^2 + ${b}(0) + ${c} ${operator} 0 \\implies ${c} ${operator} 0 $$`);
+                let isTrue = (operator === '>') ? c > 0 : (operator === '<') ? c < 0 : (operator === '\\ge') ? c >= 0 : c <= 0;
+                if(isTrue) printStep(`La disuguaglianza $${c} ${operator} 0$ è <strong>VERA</strong>. Soluzione: <br><br> <span class="solution">$$ \\text{Sempre verificata}, \\forall x \\in \\mathbb{R} $$</span><br>Intervalli: <span class="solution">$$ ]-\\infty, +\\infty[ $$</span>`);
+                else printStep(`La disuguaglianza $${c} ${operator} 0$ è <strong>FALSA</strong>. Soluzione: <br><br> <span class="solution">$$ \\text{Impossibile}, \\nexists x \\in \\mathbb{R} $$</span><br>Intervalli: <span class="solution">$$ \\emptyset $$</span>`);
+            }
+            MathJax.typesetPromise();
+        }
+
+        // --- Funzioni di Utilità ---
+        function getValue() { const min = -7, max = 7; let v = 0; while (v === 0) v = Math.floor(Math.random() * (max - min + 1)) + min; return v; }
+        function printStep(html, className = '') { const p = document.createElement('p'); if (className) p.classList.add(className); p.innerHTML = html; stepsContainer.appendChild(p); }
+        function formatTerm(coeff, variable, isFirst = false) { if (coeff === 0) return ""; let sign = coeff > 0 ? " + " : " - "; if (isFirst) sign = coeff > 0 ? "" : "- "; const absCoeff = Math.abs(coeff); if (absCoeff === 1 && variable !== "") return `${sign}${variable}`; return `${sign}${absCoeff}${variable}`; }
+        function formatEquation(a, b, c, operator) { let eq = formatTerm(a, "x^2", true); eq += formatTerm(b, "x"); eq += formatTerm(c, ""); return `$$ ${eq} ${operator} 0 $$`; }
+        function updateUrl(a,b,c,op) { const url = new URL(window.location); url.search = `?a=${a}&b=${b}&c=${c}&op=${operatorMap[op]}`; history.pushState({a,b,c,op}, '', url); shareButton.style.display = 'inline-block'; shareButton.textContent = 'Condividi URL'; }
+        function shareUrl() { navigator.clipboard.writeText(window.location.href).then(() => { shareButton.textContent = 'Copiato!'; setTimeout(() => { shareButton.textContent = 'Condividi URL'; }, 2000); }); }
+
+    </script>
+</body>
+
+</html>
